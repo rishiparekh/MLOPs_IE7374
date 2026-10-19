@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Air Quality Pipeline — Attention</title>
+  <style>
+    :root {
+      --bg: #f8f6f6; --card: #ffffff; --ink: #201414; --muted: #6b5d5d;
+      --line: #e6dfdf; --accent: #b3261e; --accent-soft: #fbeaea;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16100f; --card: #201716; --ink: #f0e8e8; --muted: #ad9b9b;
+        --line: #332826; --accent: #f87171; --accent-soft: #301a19;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 32px 16px; background: var(--bg); color: var(--ink);
+      font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; }
+    .badge {
+      display: inline-block; padding: 4px 12px; border-radius: 999px;
+      background: var(--accent-soft); color: var(--accent);
+      font-weight: 600; font-size: 13px; letter-spacing: .02em;
+    }
+    h1 { font-size: 26px; margin: 14px 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 20px 22px; margin-bottom: 16px;
+    }
+    .card h2 {
+      font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+      color: var(--muted); margin: 0 0 14px; font-weight: 600;
+    }
+    .note {
+      background: var(--accent-soft); border-left: 3px solid var(--accent);
+      padding: 12px 16px; border-radius: 6px; margin-bottom: 16px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    td { padding: 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    td:first-child { color: var(--muted); width: 45%; padding-right: 16px; }
+    td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+    code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; }
+    ul.violations { margin: 0; padding-left: 20px; }
+    ul.violations li { margin-bottom: 6px; }
+    ol.steps { color: var(--muted); margin: 0; padding-left: 20px; }
+    ol.steps li { margin-bottom: 7px; }
+    footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 26px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <span class="badge">● Needs attention</span>
+    <h1>Air Quality Pipeline — {{ location }}</h1>
+    <p class="sub">DAG <code>{{ dag_id }}</code> is in state <b>{{ state }}</b>.</p>
+
+    {% if note %}
+    <div class="note">{{ note }}</div>
+    {% endif %}
+
+    <div class="card">
+      <h2>Run details</h2>
+      <table>
+        <tr><td>Run id</td><td><code>{{ run_id }}</code></td></tr>
+        <tr><td>State</td><td>{{ state }}</td></tr>
+        <tr><td>Logical date</td><td>{{ logical_date }}</td></tr>
+        <tr><td>Started</td><td>{{ start_date }}</td></tr>
+        <tr><td>Ended</td><td>{{ end_date }}</td></tr>
+      </table>
+    </div>
+
+    {% if validation and validation.violations %}
+    <div class="card">
+      <h2>Data quality violations</h2>
+      <ul class="violations">
+        {% for violation in validation.violations %}
+        <li>{{ violation }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% elif validation %}
+    <div class="card">
+      <h2>Data quality</h2>
+      <table>
+        <tr><td>Rows ingested</td><td>{{ validation.rows }}</td></tr>
+        <tr><td>Source</td><td>{{ validation.source }}</td></tr>
+        <tr><td>Checks passed</td><td>{{ "yes" if validation.passed else "no" }}</td></tr>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if production %}
+    <div class="card">
+      <h2>Production model (still serving)</h2>
+      <table>
+        <tr><td>Model</td><td>{{ production.best_model }}</td></tr>
+        <tr><td>RMSE</td><td>{{ "%.3f"|format(production.rmse) }}</td></tr>
+        <tr><td>Trained through</td><td><code>{{ production.train_end }}</code></td></tr>
+      </table>
+      <p style="color:var(--muted);font-size:13px;margin:12px 0 0">
+        A failed run does not remove the incumbent model — the last promoted
+        version keeps serving.
+      </p>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <h2>What to check</h2>
+      <ol class="steps">
+        <li>Open the Airflow UI at <code>localhost:8080</code> and inspect the failed task's log.</li>
+        <li>If <code>validate_data</code> failed, the violations above name the offending column.</li>
+        <li>If <code>ingest_data</code> failed twice, the Open-Meteo API is unreachable; the run should have fallen back to the bundled snapshot.</li>
+        <li>Re-trigger the DAG once the cause is addressed.</li>
+      </ol>
+    </div>
+
+    <footer>Served by the Airflow_Lab2_AirQuality_Flask DAG · <a href="/metrics">JSON</a></footer>
+  </div>
+</body>
+</html>
