@@ -1,0 +1,6 @@
+# Shell scripts and container-read files must keep LF endings. A setup.sh
+# checked out with CRLF fails inside a Linux container with the unhelpful
+# error $'\r': command not found.
+*.sh            text eol=lf
+docker-compose.yaml text eol=lf
+.env.example    text eol=lf
