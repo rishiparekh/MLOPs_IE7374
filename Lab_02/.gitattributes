@@ -1,0 +1,5 @@
+# Keep LF so a Windows checkout does not produce scripts the containers
+# refuse to run.
+*.sh                text eol=lf
+docker-compose.yaml text eol=lf
+.env.example        text eol=lf

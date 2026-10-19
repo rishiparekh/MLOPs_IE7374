@@ -1,0 +1,43 @@
+name: Lab 02 - Air Quality Pipeline Tests
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "Lab_02/**"
+      - ".github/workflows/lab02_tests.yml"
+  pull_request:
+    paths:
+      - "Lab_02/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Lab_02
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        # No network access needed: ingestion tests use the committed snapshot
+        # and monkeypatched responses rather than calling Open-Meteo.
+        run: python -m pytest tests -q --junitxml=lab02-report.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab02-test-results
+          path: Lab_02/lab02-report.xml

@@ -1,0 +1,166 @@
+# Airflow 3 with LocalExecutor and Postgres. No Celery, so no Redis and no
+# separate worker container; tasks run inside the scheduler, which is why port
+# 5555 for the Flask dashboard is published there.
+---
+x-airflow-common: &airflow-common
+  image: apache/airflow:3.0.3
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__API_AUTH__JWT_SECRET: "${AIRFLOW_JWT_SECRET:-please-change-me-in-a-real-deployment}"
+
+    # Task subprocesses call back over the Task Execution API, which defaults
+    # to localhost:8080. Nothing listens there inside the scheduler, so without
+    # this every task sits in queued until it is killed.
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+
+    # The default auth manager generates a random password, which the Flask
+    # DAG cannot use to request a token.
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+
+    # No _PIP_ADDITIONAL_REQUIREMENTS: the base image already has pandas,
+    # numpy, scikit-learn, requests, joblib and the fab/smtp/standard
+    # providers. Pinning them here just downgrades four packages on start.
+
+    # Read by dags/src/config.py
+    AQ_WORKING_DIR: /opt/airflow/working_data
+    AQ_MODEL_DIR: /opt/airflow/model
+    AQ_LATITUDE: "${AQ_LATITUDE:-42.3601}"
+    AQ_LONGITUDE: "${AQ_LONGITUDE:--71.0589}"
+    AQ_LOCATION_NAME: "${AQ_LOCATION_NAME:-Boston, MA}"
+    AQ_HORIZON_HOURS: "${AQ_HORIZON_HOURS:-1}"
+    AQ_ALERT_EMAIL: "${AQ_ALERT_EMAIL:-}"
+
+    # Flask dashboard -> Airflow REST API
+    AIRFLOW_WEBSERVER: http://airflow-apiserver:8080
+    AIRFLOW_USERNAME: airflow
+    AIRFLOW_PASSWORD: airflow
+    TARGET_DAG_ID: Airflow_Lab2_AirQuality
+
+    # SMTP; leave unset to disable email
+    AIRFLOW__SMTP__SMTP_HOST: "${SMTP_HOST:-smtp.gmail.com}"
+    AIRFLOW__SMTP__SMTP_STARTTLS: "true"
+    AIRFLOW__SMTP__SMTP_SSL: "false"
+    AIRFLOW__SMTP__SMTP_PORT: "587"
+    AIRFLOW__SMTP__SMTP_USER: "${SMTP_USER:-}"
+    AIRFLOW__SMTP__SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+    AIRFLOW__SMTP__SMTP_MAIL_FROM: "${SMTP_USER:-airflow@example.com}"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./config:/opt/airflow/config
+    # Bind-mounted rather than named volumes so you can open the artifacts
+    # (metrics JSON, pickled models) in your editor while debugging.
+    - ./working_data:/opt/airflow/working_data
+    - ./model:/opt/airflow/model
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    ports:
+      # The Flask dashboard task runs here under LocalExecutor.
+      - "5555:5555"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username airflow --password airflow \
+          --firstname Air --lastname Flow \
+          --role Admin --email airflow@example.com || true
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: airflow
+      _AIRFLOW_WWW_USER_PASSWORD: airflow
+    user: "0:0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  airflow-cli:
+    <<: *airflow-common
+    profiles: ["debug"]
+    command: bash
+    restart: "no"
+
+volumes:
+  postgres-db-volume:

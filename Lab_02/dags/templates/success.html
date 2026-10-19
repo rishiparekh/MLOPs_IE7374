@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Air Quality Pipeline — Healthy</title>
+  <style>
+    :root {
+      --bg: #f6f8f7; --card: #ffffff; --ink: #14201a; --muted: #5d6b64;
+      --line: #dfe6e2; --accent: #1b7f4e; --accent-soft: #e6f4ec;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1613; --card: #16201c; --ink: #e8f0ec; --muted: #9bada4;
+        --line: #26332d; --accent: #4ade80; --accent-soft: #16301f;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 32px 16px; background: var(--bg); color: var(--ink);
+      font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; }
+    .badge {
+      display: inline-block; padding: 4px 12px; border-radius: 999px;
+      background: var(--accent-soft); color: var(--accent);
+      font-weight: 600; font-size: 13px; letter-spacing: .02em;
+    }
+    h1 { font-size: 26px; margin: 14px 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 20px 22px; margin-bottom: 16px;
+    }
+    .card h2 {
+      font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+      color: var(--muted); margin: 0 0 14px; font-weight: 600;
+    }
+    .hero { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .hero .value { font-size: 42px; font-weight: 650; color: var(--accent); }
+    .hero .unit { color: var(--muted); font-size: 15px; }
+    table { width: 100%; border-collapse: collapse; }
+    td { padding: 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    td:first-child { color: var(--muted); width: 45%; padding-right: 16px; }
+    td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+    code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+    .pill { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
+    footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 26px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <span class="badge">● Pipeline healthy</span>
+    <h1>Air Quality Forecast — {{ location }}</h1>
+    <p class="sub">DAG <code>{{ dag_id }}</code> last completed with state <b>{{ state }}</b>.</p>
+
+    {% if prediction %}
+    <div class="card">
+      <h2>Latest forecast (+{{ prediction.horizon_hours }}h PM2.5)</h2>
+      <div class="hero">
+        <span class="value">{{ prediction.predicted }}</span>
+        <span class="unit">{{ prediction.units }}</span>
+      </div>
+      <table style="margin-top:14px">
+        <tr><td>Observed value</td><td>{{ prediction.actual }} {{ prediction.units }}</td></tr>
+        <tr><td>Absolute error</td><td>{{ prediction.absolute_error }} {{ prediction.units }}</td></tr>
+        <tr><td>As of</td><td><code>{{ prediction.as_of }}</code></td></tr>
+      </table>
+    </div>
+    {% endif %}
+
+    <div class="grid">
+      {% if metrics %}
+      <div class="card">
+        <h2>Model evaluation</h2>
+        <table>
+          <tr><td>Winning model</td><td><span class="pill">{{ metrics.best_model }}</span></td></tr>
+          <tr><td>RMSE</td><td>{{ "%.3f"|format(metrics.rmse) }}</td></tr>
+          <tr><td>MAE</td><td>{{ "%.3f"|format(metrics.mae) }}</td></tr>
+          <tr><td>R²</td><td>{{ "%.3f"|format(metrics.r2) }}</td></tr>
+          {% if metrics.persistence_baseline %}
+          <tr><td>Baseline RMSE</td><td>{{ "%.3f"|format(metrics.persistence_baseline.rmse) }}</td></tr>
+          <tr><td>Beats baseline</td><td>{{ "yes" if metrics.beats_baseline else "no" }}</td></tr>
+          {% endif %}
+          <tr><td>Promoted</td><td>{{ "yes" if metrics.promoted else "no" }}</td></tr>
+        </table>
+        {% if metrics.decision_reason %}
+        <p style="color:var(--muted);font-size:13px;margin:12px 0 0">{{ metrics.decision_reason }}</p>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <div class="card">
+        <h2>Run details</h2>
+        <table>
+          <tr><td>Run id</td><td><code>{{ run_id }}</code></td></tr>
+          <tr><td>Logical date</td><td>{{ logical_date }}</td></tr>
+          <tr><td>Started</td><td>{{ start_date }}</td></tr>
+          <tr><td>Ended</td><td>{{ end_date }}</td></tr>
+          {% if validation %}
+          <tr><td>Rows ingested</td><td>{{ validation.rows }}</td></tr>
+          <tr><td>Data source</td><td>{{ validation.source }}</td></tr>
+          {% endif %}
+          {% if metrics %}
+          <tr><td>Train / test rows</td><td>{{ metrics.n_train }} / {{ metrics.n_test }}</td></tr>
+          <tr><td>Features</td><td>{{ metrics.n_features }}</td></tr>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+
+    {% if production %}
+    <div class="card">
+      <h2>Currently in production</h2>
+      <table>
+        <tr><td>Model</td><td><span class="pill">{{ production.best_model }}</span></td></tr>
+        <tr><td>RMSE</td><td>{{ "%.3f"|format(production.rmse) }}</td></tr>
+        <tr><td>Trained through</td><td><code>{{ production.train_end }}</code></td></tr>
+      </table>
+    </div>
+    {% endif %}
+
+    <footer>Served by the Airflow_Lab2_AirQuality_Flask DAG · <a href="/metrics">JSON</a></footer>
+  </div>
+</body>
+</html>
