@@ -1,13 +1,6 @@
-# Airflow 3 stack for the air-quality lab.
-#
-# Deliberately smaller than the official compose file: LocalExecutor instead of
-# Celery, so there is no Redis and no separate worker container. Tasks run as
-# subprocesses of the scheduler, which is why port 5555 (the Flask dashboard)
-# is published there and not on the apiserver.
-#
-# If your course pins a different Airflow version, reuse the docker-compose
-# from Lab 2 and just add the two bind mounts (working_data, model) and the
-# 5555 port mapping -- those are the only parts this lab actually requires.
+# Airflow 3 with LocalExecutor and Postgres. No Celery, so no Redis and no
+# separate worker container; tasks run inside the scheduler, which is why port
+# 5555 for the Flask dashboard is published there.
 ---
 x-airflow-common: &airflow-common
   image: apache/airflow:3.0.3
@@ -18,32 +11,20 @@ x-airflow-common: &airflow-common
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__API_AUTH__JWT_SECRET: "${AIRFLOW_JWT_SECRET:-please-change-me-in-a-real-deployment}"
 
-    # REQUIRED on Airflow 3 whenever tasks run in a different container from
-    # the apiserver. A task subprocess no longer talks to the metadata DB
-    # directly -- it calls back over the Task Execution API, which defaults to
-    # http://localhost:8080/execution/. Inside the scheduler container nothing
-    # listens on 8080, so without this every task is queued, retries the API
-    # four times, gets SIGKILLed, and the run hangs forever with no error in
-    # the scheduler log.
+    # Task subprocesses call back over the Task Execution API, which defaults
+    # to localhost:8080. Nothing listens there inside the scheduler, so without
+    # this every task sits in queued until it is killed.
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
 
-    # Username/password auth so the Flask DAG can mint a token against
-    # POST /auth/token. The default Airflow 3 auth manager generates a random
-    # password instead, which a scripted client cannot guess.
+    # The default auth manager generates a random password, which the Flask
+    # DAG cannot use to request a token.
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
 
-    # No _PIP_ADDITIONAL_REQUIREMENTS. apache/airflow:3.0.3 already ships
-    # everything this pipeline imports:
-    #
-    #   pandas 2.2.3   numpy 2.2.6   scikit-learn 1.7.0   requests 2.32.4
-    #   joblib 1.5.1   providers: fab 2.3.0, smtp 2.1.1, standard 1.4.1
-    #
-    # Listing them here only forced pip to DOWNGRADE four of them on every
-    # container start -- slow, and a good way to break Airflow's own pinned
-    # dependency set. requirements.txt still pins exact versions for the local
-    # venv and CI, where there is no base image to inherit from.
+    # No _PIP_ADDITIONAL_REQUIREMENTS: the base image already has pandas,
+    # numpy, scikit-learn, requests, joblib and the fab/smtp/standard
+    # providers. Pinning them here just downgrades four packages on start.
 
-    # ---- Pipeline configuration (consumed by dags/src/config.py) ----
+    # Read by dags/src/config.py
     AQ_WORKING_DIR: /opt/airflow/working_data
     AQ_MODEL_DIR: /opt/airflow/model
     AQ_LATITUDE: "${AQ_LATITUDE:-42.3601}"
@@ -52,13 +33,13 @@ x-airflow-common: &airflow-common
     AQ_HORIZON_HOURS: "${AQ_HORIZON_HOURS:-1}"
     AQ_ALERT_EMAIL: "${AQ_ALERT_EMAIL:-}"
 
-    # ---- Flask dashboard -> Airflow REST API ----
+    # Flask dashboard -> Airflow REST API
     AIRFLOW_WEBSERVER: http://airflow-apiserver:8080
     AIRFLOW_USERNAME: airflow
     AIRFLOW_PASSWORD: airflow
     TARGET_DAG_ID: Airflow_Lab2_AirQuality
 
-    # ---- SMTP (optional; leave unset to disable email) ----
+    # SMTP; leave unset to disable email
     AIRFLOW__SMTP__SMTP_HOST: "${SMTP_HOST:-smtp.gmail.com}"
     AIRFLOW__SMTP__SMTP_STARTTLS: "true"
     AIRFLOW__SMTP__SMTP_SSL: "false"
