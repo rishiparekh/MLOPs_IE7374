@@ -1,10 +1,3 @@
-"""
-Tests for feature engineering and splitting.
-
-The leakage tests are the important ones. A leaking pipeline still trains, still
-produces a model, and still reports a great score -- there is no exception to
-catch. Only an explicit assertion will tell you.
-"""
 from __future__ import annotations
 
 import pickle
@@ -32,12 +25,6 @@ def test_lag_features_look_backwards(hourly_frame):
 
 
 def test_rolling_mean_excludes_the_current_row(hourly_frame):
-    """
-    The leakage guard. A 3h rolling mean at row i must average rows i-3..i-1.
-    If it included row i, the feature would contain the value the model is
-    partly being asked to extrapolate from -- and in a target-derived feature
-    that is a direct path to an inflated score.
-    """
     engineered = features.build_feature_frame(hourly_frame)
     index = 100
     expected = engineered["pm2_5"].iloc[index - 3 : index].mean()
@@ -85,12 +72,6 @@ def test_split_is_chronological(pipeline_dirs, hourly_frame):
 
 
 def test_scaler_is_fit_on_training_data_only(pipeline_dirs, hourly_frame):
-    """
-    If the scaler had seen the test slice, the *training* matrix would be
-    centred on the full-series mean rather than the training mean. Checking
-    that the training columns are centred is therefore a proxy for "the test
-    set did not influence the fit".
-    """
     engineered = features.build_feature_frame(hourly_frame)
     features_path = pipeline_dirs["working"] / config.FEATURES_PKL
     with open(features_path, "wb") as handle:

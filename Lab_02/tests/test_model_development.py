@@ -1,4 +1,3 @@
-"""Tests for training, evaluation, promotion and prediction."""
 from __future__ import annotations
 
 import json
@@ -12,15 +11,12 @@ from src import config, features, model_development as md
 
 @pytest.fixture
 def splits_path(pipeline_dirs, hourly_frame):
-    """Run the real feature + split pipeline so tests exercise real artifacts."""
     engineered = features.build_feature_frame(hourly_frame)
     features_file = pipeline_dirs["working"] / config.FEATURES_PKL
     with open(features_file, "wb") as handle:
         pickle.dump(engineered, handle)
     return features.split_data(str(features_file))
 
-
-# ---------- metrics ----------
 
 def test_score_is_perfect_on_identical_arrays():
     values = np.array([1.0, 2.0, 3.0, 4.0])
@@ -29,8 +25,6 @@ def test_score_is_perfect_on_identical_arrays():
     assert result["mae"] == pytest.approx(0.0)
     assert result["r2"] == pytest.approx(1.0)
 
-
-# ---------- training ----------
 
 @pytest.mark.parametrize("model_name", sorted(md.MODEL_REGISTRY))
 def test_train_model_writes_a_loadable_artifact(splits_path, model_name):
@@ -44,8 +38,6 @@ def test_train_model_rejects_unknown_name(splits_path):
     with pytest.raises(ValueError, match="Unknown model"):
         md.train_model(splits_path, "not_a_real_model")
 
-
-# ---------- evaluation ----------
 
 def test_evaluate_scores_every_candidate(pipeline_dirs, splits_path):
     for model_name in md.MODEL_REGISTRY:
@@ -68,12 +60,6 @@ def test_evaluate_raises_when_nothing_was_trained(pipeline_dirs, splits_path):
 
 
 def test_persistence_baseline_is_in_original_units(pipeline_dirs, splits_path):
-    """
-    The baseline predicts "next hour == this hour". Because features are
-    standardised, scoring it requires inverting the scaler first -- forgetting
-    that produces a nonsense RMSE in the hundreds and a baseline nothing can
-    beat.
-    """
     md.train_model(splits_path, "ridge")
     metrics = json.loads(open(md.evaluate_models(splits_path)).read())
 
@@ -83,8 +69,6 @@ def test_persistence_baseline_is_in_original_units(pipeline_dirs, splits_path):
     # A sane baseline RMSE is on the order of the target's own scale.
     assert metrics["persistence_baseline"]["rmse"] < 5 * float(np.std(splits["y_test"]))
 
-
-# ---------- promotion policy (implemented by you) ----------
 
 def test_promotes_when_nothing_is_in_production():
     candidate = {"rmse": 2.0, "mae": 1.5, "r2": 0.8, "beats_baseline": True}
@@ -108,8 +92,6 @@ def test_rejects_a_clear_regression():
     assert promote is False
     assert isinstance(reason, str) and reason
 
-
-# ---------- branching + promotion mechanics ----------
 
 def test_decide_promotion_returns_a_real_task_id(pipeline_dirs, splits_path):
     md.train_model(splits_path, "ridge")

@@ -1,20 +1,3 @@
-"""
-Airflow_Lab2_AirQuality_Flask -- the monitoring surface.
-
-Same architecture as Lab 2's Flask DAG: a long-running Flask server, started by
-a PythonOperator, that authenticates against the Airflow REST API and reports
-on the last run of the pipeline DAG.
-
-The difference is what it reports. Lab 2's page was a binary light: the run
-succeeded, or it did not. This one also renders the artifacts the run produced
--- model metrics, the promotion decision, and the latest forecast -- which is
-the difference between a liveness check and a dashboard.
-
-Known limitation, worth understanding rather than hiding: `app.run()` blocks
-the worker slot for as long as the server lives. That is acceptable for a lab
-but is not how you would deploy a service; in production the API would be its
-own container, not an Airflow task.
-"""
 from __future__ import annotations
 
 import json
@@ -34,7 +17,6 @@ from src import config
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-# ---------- Airflow API config ----------
 WEBSERVER = os.getenv("AIRFLOW_WEBSERVER", "http://airflow-apiserver:8080")
 AF_USER = os.getenv("AIRFLOW_USERNAME", "airflow")
 AF_PASS = os.getenv("AIRFLOW_PASSWORD", "airflow")
@@ -46,7 +28,6 @@ TEMPLATE_DIR = BASE_DIR / "templates"
 
 app = Flask(__name__, template_folder=str(TEMPLATE_DIR))
 
-# Cache the bearer token so we are not minting one per HTTP request.
 _CACHED_TOKEN: str | None = None
 _TOKEN_EXPIRY: float = 0.0
 
@@ -84,7 +65,6 @@ def _read_json(path: Path) -> dict:
 
 
 def get_pipeline_artifacts() -> dict:
-    """Read whatever the last run wrote to disk. Missing files are not errors."""
     return {
         "metrics": _read_json(config.working_dir() / config.CANDIDATE_METRICS),
         "production": _read_json(config.model_dir() / config.PRODUCTION_METRICS),
@@ -94,7 +74,6 @@ def get_pipeline_artifacts() -> dict:
 
 
 def get_latest_run_info() -> tuple[bool, dict]:
-    """Query the Airflow REST API for the most recent run of the pipeline DAG."""
     info = {
         "dag_id": TARGET_DAG_ID,
         "location": config.LOCATION_NAME,
@@ -151,7 +130,6 @@ def get_latest_run_info() -> tuple[bool, dict]:
     return state == "success", info
 
 
-# ---------- Routes ----------
 @app.route("/")
 def index():
     ok, _ = get_latest_run_info()
@@ -172,7 +150,6 @@ def failure():
 
 @app.route("/metrics")
 def metrics():
-    """Machine-readable view of the same data, for scripted checks."""
     ok, info = get_latest_run_info()
     return jsonify({"healthy": ok, **info})
 
@@ -183,11 +160,11 @@ def health():
 
 
 def start_flask_app() -> None:
+    # Blocks the worker slot for as long as the server runs.
     logger.info("Starting dashboard on 0.0.0.0:%s (Airflow at %s)", FLASK_PORT, WEBSERVER)
     app.run(host="0.0.0.0", port=FLASK_PORT, debug=False, use_reloader=False)
 
 
-# ---------- DAG ----------
 default_args = {
     "start_date": pendulum.datetime(2024, 1, 1, tz="UTC"),
     "retries": 0,

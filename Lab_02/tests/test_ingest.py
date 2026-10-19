@@ -1,10 +1,3 @@
-"""
-Tests for ingestion.
-
-These never hit the network. A test that calls Open-Meteo for real is not a
-unit test -- it is a monitor for somebody else's uptime, and it will fail your
-CI on a day when nothing you own is broken.
-"""
 from __future__ import annotations
 
 import pandas as pd
@@ -41,7 +34,6 @@ def test_hourly_frame_rejects_malformed_payload():
 
 
 def test_snapshot_is_present_and_usable():
-    """The bundled fallback must be committed, or the offline path is a lie."""
     snapshot = config.data_dir() / config.SNAPSHOT_CSV
     assert snapshot.exists(), f"missing fallback snapshot at {snapshot}"
 

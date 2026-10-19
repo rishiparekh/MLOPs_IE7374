@@ -1,10 +1,3 @@
-"""
-Pytest configuration.
-
-`dags/` goes on sys.path because that is what Airflow itself does at runtime --
-it is why `from src import config` resolves inside a DAG file. Replicating it
-here is what lets the pipeline logic be tested without Airflow installed.
-"""
 from __future__ import annotations
 
 import sys
@@ -14,6 +7,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+# Airflow puts the dags folder on sys.path at runtime; do the same so
+# `from src import ...` resolves under pytest.
 DAGS_DIR = Path(__file__).resolve().parent / "dags"
 if str(DAGS_DIR) not in sys.path:
     sys.path.insert(0, str(DAGS_DIR))
@@ -21,7 +16,6 @@ if str(DAGS_DIR) not in sys.path:
 
 @pytest.fixture
 def pipeline_dirs(tmp_path, monkeypatch):
-    """Redirect every pipeline write into a temporary directory."""
     working = tmp_path / "working_data"
     model = tmp_path / "model"
     monkeypatch.setenv("AQ_WORKING_DIR", str(working))
@@ -33,18 +27,12 @@ def pipeline_dirs(tmp_path, monkeypatch):
 
 @pytest.fixture
 def hourly_frame() -> pd.DataFrame:
-    """
-    500 hours of plausible, fully-populated observations.
-
-    PM2.5 is built from a daily cycle plus autocorrelated noise so that lag
-    features actually carry signal -- a pure random walk would make every
-    model score identically and hide regressions.
-    """
     rows = 500
     rng = np.random.default_rng(0)
     times = pd.date_range("2025-01-01", periods=rows, freq="h", tz="UTC")
     hour_of_day = np.arange(rows) % 24
 
+    # Daily cycle plus autocorrelated noise, so lag features carry signal.
     pm25 = 10 + 4 * np.sin(2 * np.pi * hour_of_day / 24)
     pm25 += np.cumsum(rng.normal(0, 0.25, rows)) * 0.3
     pm25 = np.clip(pm25, 0.1, None)

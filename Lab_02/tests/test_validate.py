@@ -1,4 +1,3 @@
-"""Tests for the data-quality gate."""
 from __future__ import annotations
 
 import json
@@ -81,6 +80,6 @@ def test_validate_data_raises_on_bad_data(pipeline_dirs, hourly_frame, tmp_path)
     with pytest.raises(validate.DataValidationError):
         validate.validate_data(str(raw_path))
 
-    # The report is still written -- that is what the failure email reads.
+    # Report is still written, which is what the failure email reads.
     report = json.loads((pipeline_dirs["working"] / config.VALIDATION_REPORT).read_text())
     assert report["passed"] is False

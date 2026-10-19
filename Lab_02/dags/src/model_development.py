@@ -1,17 +1,3 @@
-"""
-Tasks 5-8: train competing models, evaluate them, and decide what ships.
-
-Lab 2 trained one LogisticRegression, printed a score, and promoted it
-unconditionally. That last part is the real gap: a pipeline that overwrites
-production with whatever it just trained will eventually overwrite a good model
-with a bad one, on a schedule, unattended.
-
-This module separates three concerns that Lab 2 conflated:
-
-    train      -- fit a candidate, save it; knows nothing about production
-    evaluate   -- score candidates on held-out data, pick the best candidate
-    promote    -- compare best candidate against production, decide, then act
-"""
 from __future__ import annotations
 
 import json
@@ -29,12 +15,10 @@ from src import config
 
 logger = logging.getLogger(__name__)
 
-#: Task ids the branch operator chooses between. Imported by the DAG so the
-#: strings cannot drift apart.
+# Imported by main.py so the branch return values match the task ids.
 PROMOTE_TASK_ID = "promote_model"
 SKIP_TASK_ID = "skip_promotion"
 
-#: Candidate architectures, trained in parallel as separate Airflow tasks.
 MODEL_REGISTRY = {
     "ridge": lambda: Ridge(alpha=1.0),
     "random_forest": lambda: RandomForestRegressor(
@@ -45,6 +29,8 @@ MODEL_REGISTRY = {
         n_jobs=-1,
     ),
 }
+
+MIN_RELATIVE_IMPROVEMENT = 0.01
 
 
 def _load_splits(splits_path: str) -> dict:
@@ -67,7 +53,6 @@ def _read_json(path: Path) -> dict | None:
 
 
 def score(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
-    """Regression metrics. RMSE is the headline number; MAE and R2 are context."""
     return {
         "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
         "mae": float(mean_absolute_error(y_true, y_pred)),
@@ -76,7 +61,6 @@ def score(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
 
 
 def train_model(splits_path: str, model_name: str) -> str:
-    """Airflow task entry point. Fits one candidate and returns its path."""
     config.ensure_dirs()
 
     if model_name not in MODEL_REGISTRY:
@@ -97,13 +81,6 @@ def train_model(splits_path: str, model_name: str) -> str:
 
 
 def evaluate_models(splits_path: str) -> str:
-    """
-    Airflow task entry point. Scores every trained candidate and records the
-    winner in candidate_metrics.json.
-
-    A persistence-baseline score is included for honesty: if a model cannot beat
-    "next hour looks like this hour", it has learned nothing worth shipping.
-    """
     config.ensure_dirs()
 
     splits = _load_splits(splits_path)
@@ -123,9 +100,8 @@ def evaluate_models(splits_path: str) -> str:
     if not results:
         raise RuntimeError("No candidate models were trained; nothing to evaluate")
 
-    # Persistence baseline: predict "next hour == this hour". Because the
-    # features were standardised we cannot read pm2_5 straight off X_test, so
-    # the baseline is scored against the lag-1 column in its original units.
+    # Baseline of "next hour == this hour". X_test is standardised, so the
+    # lag-1 column has to be inverted back to ug/m3 before scoring it.
     lag_1h_index = splits["feature_names"].index(f"{config.TARGET}_lag_1h")
     scaler = splits["scaler"]
     lag_1h_original = (
@@ -155,35 +131,12 @@ def evaluate_models(splits_path: str) -> str:
     return str(out_path)
 
 
-# --------------------------------------------------------------------------
-# Promotion policy
-# --------------------------------------------------------------------------
-
-#: Guidance for the policy below: RMSE differences smaller than this are mostly
-#: resampling noise on a test set of a few hundred hours.
-MIN_RELATIVE_IMPROVEMENT = 0.01  # 1%
-
-
 def should_promote(candidate: dict, production: dict | None) -> tuple[bool, str]:
-    """
-    Decide whether `candidate` should replace the currently-deployed model.
-
-    Args:
-        candidate: metrics dict from `evaluate_models` -- has "rmse", "mae",
-            "r2", and "beats_baseline" (bool).
-        production: the same shape for the live model, or None if nothing has
-            ever been promoted.
-
-    Returns:
-        (promote, reason) -- the reason string is surfaced on the Flask
-        dashboard and in the notification email, so write it for a human.
-    """
     if not production:
         return (True, "First deployed model: nothing in production to compare against.")
 
-    # RMSE is an ERROR, so lower is better. `production - candidate` is
-    # positive exactly when the candidate improves on the incumbent; dividing
-    # by the incumbent turns it into a relative improvement.
+    # RMSE is an error, so production - candidate is positive when the
+    # candidate is better.
     improvement = (production["rmse"] - candidate["rmse"]) / production["rmse"]
 
     if improvement > MIN_RELATIVE_IMPROVEMENT:
@@ -208,18 +161,9 @@ def should_promote(candidate: dict, production: dict | None) -> tuple[bool, str]
         f"{MIN_RELATIVE_IMPROVEMENT:.0%} noise threshold; not worth redeploying "
         f"(RMSE {candidate['rmse']:.3f} new vs {production['rmse']:.3f} in production).",
     )
-    
-    # raise NotImplementedError("should_promote() has not been implemented yet")
 
 
 def decide_promotion(candidate_metrics_path: str) -> str:
-    """
-    Airflow BranchPythonOperator callable. Returns the id of the next task.
-
-    Branching (rather than an `if` inside the promote task) means the decision
-    is visible in the Airflow UI: you can see at a glance which runs shipped a
-    model and which did not.
-    """
     config.ensure_dirs()
 
     candidate = _read_json(Path(candidate_metrics_path)) or {}
@@ -235,7 +179,6 @@ def decide_promotion(candidate_metrics_path: str) -> str:
 
 
 def promote_model(candidate_metrics_path: str) -> str:
-    """Copy the winning candidate into the production slot and record its metrics."""
     config.ensure_dirs()
 
     metrics = _read_json(Path(candidate_metrics_path)) or {}
@@ -258,7 +201,6 @@ def promote_model(candidate_metrics_path: str) -> str:
 
 
 def skip_promotion(candidate_metrics_path: str) -> str:
-    """No-op branch: production keeps serving the incumbent model."""
     metrics = _read_json(Path(candidate_metrics_path)) or {}
     reason = metrics.get("decision_reason", "no reason recorded")
     logger.info("Kept incumbent production model. Reason: %s", reason)
@@ -266,13 +208,6 @@ def skip_promotion(candidate_metrics_path: str) -> str:
 
 
 def predict_latest(splits_path: str) -> str:
-    """
-    Final task: load whatever is in production and forecast the most recent hour.
-
-    This proves the artifact on disk is loadable and usable -- the same check
-    Lab 2's `load_model()` performed, but writing a JSON the dashboard renders
-    instead of printing to a log nobody reads.
-    """
     config.ensure_dirs()
 
     model_path = config.model_dir() / config.PRODUCTION_MODEL

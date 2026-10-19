@@ -1,18 +1,3 @@
-"""
-Task 1: ingest hourly air-quality + weather observations.
-
-This replaces Lab 2's static `advertising.csv` read. Pulling live data is what
-makes `schedule="@daily"` mean something -- each run sees data the previous run
-did not.
-
-Reliability note: a lab that only works when the network does is a lab that
-fails during grading. `ingest_data()` therefore degrades gracefully:
-
-    live API  ->  (on any failure)  ->  bundled snapshot CSV
-
-which is itself the MLOps lesson: an upstream dependency you do not control
-needs an explicit, tested fallback path, not an unhandled exception.
-"""
 from __future__ import annotations
 
 import logging
@@ -31,21 +16,18 @@ REQUEST_TIMEOUT = 30
 
 
 def _hourly_frame(payload: dict[str, Any], columns: list[str]) -> pd.DataFrame:
-    """Turn Open-Meteo's column-oriented `hourly` block into a DataFrame."""
     hourly = payload.get("hourly") or {}
     if "time" not in hourly:
         raise ValueError("Open-Meteo response contained no 'hourly.time' block")
 
     frame = pd.DataFrame({"time": pd.to_datetime(hourly["time"], utc=True)})
     for column in columns:
-        # A column the API omits becomes all-NaN rather than a KeyError; the
-        # validation task downstream is what decides whether that is tolerable.
+        # Missing columns become NaN; validate_data decides if that is tolerable.
         frame[column] = hourly.get(column, [None] * len(frame))
     return frame
 
 
 def fetch_live(past_days: int = 30) -> pd.DataFrame:
-    """Fetch and merge air-quality + weather observations. Raises on failure."""
     common = {
         "latitude": config.LATITUDE,
         "longitude": config.LONGITUDE,
@@ -78,7 +60,6 @@ def fetch_live(past_days: int = 30) -> pd.DataFrame:
 
 
 def load_snapshot() -> pd.DataFrame:
-    """Read the version-controlled fallback snapshot shipped with the lab."""
     snapshot_path = config.data_dir() / config.SNAPSHOT_CSV
     logger.warning("Falling back to bundled snapshot at %s", snapshot_path)
     frame = pd.read_csv(snapshot_path, parse_dates=["time"])
@@ -87,20 +68,12 @@ def load_snapshot() -> pd.DataFrame:
 
 
 def ingest_data(past_days: int = 30) -> str:
-    """
-    Airflow task entry point.
-
-    Returns the path to the raw CSV. Returning a *path* rather than the
-    DataFrame itself is deliberate: XCom is backed by the metadata database and
-    is meant for small values, so tasks exchange references while the data
-    itself travels through a shared volume.
-    """
     config.ensure_dirs()
 
     try:
         frame = fetch_live(past_days=past_days)
         source = "open-meteo"
-    except Exception as exc:  # noqa: BLE001 - any failure must hit the fallback
+    except Exception as exc:
         logger.warning("Live fetch failed (%s: %s); using snapshot", type(exc).__name__, exc)
         frame = load_snapshot()
         source = "snapshot"

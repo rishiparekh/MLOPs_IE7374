@@ -1,15 +1,3 @@
-"""
-Email notifications for pipeline success and failure.
-
-Mirrors Lab 2's `notify_success` / `notify_failure` callbacks, with one change
-worth understanding: these build their body from the artifacts the run actually
-produced, so the email tells you *what happened* rather than merely *that*
-something happened.
-
-SMTP is configured through an Airflow connection / environment variables rather
-than by editing `airflow.cfg` in the repository -- Lab 2's approach commits a
-password field to version control.
-"""
 from __future__ import annotations
 
 import json
@@ -32,7 +20,6 @@ def _read_json(path: Path) -> dict:
 
 
 def _summary_html() -> str:
-    """Render the latest metrics and forecast as an HTML fragment."""
     metrics = _read_json(config.working_dir() / config.CANDIDATE_METRICS)
     prediction = _read_json(config.model_dir() / config.LATEST_PREDICTION)
 
@@ -65,16 +52,11 @@ def _summary_html() -> str:
 
 
 def _send(subject: str, html: str, context: dict) -> None:
-    """
-    Build and run an EmailOperator inline.
-
-    Imported lazily so this module stays importable (and testable) outside an
-    Airflow installation.
-    """
     if not ALERT_EMAIL:
         logger.warning("AQ_ALERT_EMAIL is unset; skipping notification %r", subject)
         return
 
+    # Imported here so the module stays importable without Airflow.
     from airflow.providers.smtp.operators.smtp import EmailOperator
 
     EmailOperator(
@@ -86,7 +68,6 @@ def _send(subject: str, html: str, context: dict) -> None:
 
 
 def notify_success(context: dict) -> None:
-    """`on_success_callback` for the final task in the DAG."""
     run_id = context.get("run_id", "unknown")
     html = (
         f"<h3>Air quality pipeline succeeded</h3>"
@@ -97,7 +78,6 @@ def notify_success(context: dict) -> None:
 
 
 def notify_failure(context: dict) -> None:
-    """`on_failure_callback`, attached to every task via `default_args`."""
     task_instance = context.get("task_instance")
     task_id = getattr(task_instance, "task_id", "unknown")
     exception = context.get("exception", "no exception recorded")
