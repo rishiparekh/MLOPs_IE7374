@@ -1,0 +1,12 @@
+# Pipeline dependencies.
+#
+# These are installed INTO the Airflow image (see docker-compose.yaml) and into
+# the local `lab_02` venv. Apache Airflow itself is deliberately NOT pinned here
+# -- it comes from the `apache/airflow` base image, and letting pip resolve it
+# alongside these packages is how you get dependency-conflict pain.
+pandas==2.2.3
+numpy==2.1.3
+scikit-learn==1.6.1
+requests==2.32.3
+flask==3.1.0
+joblib==1.4.2
