@@ -1,0 +1,35 @@
+# TFX has no Windows wheels: tensorflow-data-validation and ml-metadata are
+# C++ extensions published only for manylinux and macOS. This compose file is
+# how the lab runs on a Windows host.
+---
+services:
+  tfx-lab:
+    # Published by .github/workflows/lab03_image.yml. `docker compose pull`
+    # fetches it, which takes a few minutes instead of the ~15 the local build
+    # needs. The build stanza is kept so the image can still be rebuilt from
+    # source with `docker compose build`.
+    image: ghcr.io/rishiparekh/lab03-tfx:1.16.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: lab_03_tfx
+
+    ports:
+      # Bound to loopback so the notebook server is not exposed on the LAN.
+      - "127.0.0.1:8888:8888"
+
+    volumes:
+      # The lab directory is mounted rather than baked in, so edits to the
+      # notebook and to breast_cancer_transform.py are picked up without a
+      # rebuild. Pipeline outputs land back on the host under ./pipeline.
+      - .:/workspace
+
+    working_dir: /workspace
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8888/api"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s

@@ -1,0 +1,9 @@
+# InteractiveContext writes component outputs here on every run.
+pipeline/
+
+# Metadata store created by the InteractiveContext.
+metadata.sqlite
+*.sqlite
+
+# Jupyter
+.ipynb_checkpoints/
