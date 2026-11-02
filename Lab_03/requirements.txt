@@ -1,0 +1,36 @@
+# TFX 1.16.0 is the newest release whose native dependencies still ship
+# manylinux_2_17 wheels. From 1.17 onward tensorflow-data-validation and
+# ml-metadata are built against glibc 2.39, which would force a trixie or
+# Ubuntu 24.04 base image. Pinning here keeps python:3.10-slim-bookworm viable.
+#
+# tfx 1.16.0 itself requires python >=3.9,<3.11 and pins:
+#   tensorflow>=2.16.0,<2.17   tensorflow-transform>=1.16.0,<1.17
+#   tensorflow-data-validation>=1.16.1,<1.17   ml-metadata>=1.16.0,<1.17
+#   numpy<2   protobuf<5
+# Those transitive pins are left to the resolver rather than restated, so a
+# patch release of any of them is still allowed.
+tfx==1.16.0
+
+# tfx 1.16.0 only bounds apache-beam as >=2.47,<3, which lets a resolver pick a
+# Beam far newer than TFX was built against. Beam 2.69 moved dill out of its
+# core dependencies into an extra, so anything from 2.69 up installs a Beam
+# that TFX 1.16 was not written for.
+apache-beam[gcp]<2.69
+
+# tfx_bsl imports dill unconditionally but never declares it -- it relied on
+# Beam providing it. Declared here directly so the install does not depend on
+# another project's packaging choices. Without it the failure is a
+# ModuleNotFoundError at import time, deep inside tensorflow_data_validation,
+# long after the install reports success. The bound is the one Beam used while
+# dill was still a core dependency.
+dill>=0.3.1.1,<0.3.2
+
+# The lab runs interactively, so the notebook stack is part of the image.
+jupyterlab==4.2.5
+notebook==7.2.2
+
+# Used for the dataset preview and the transformed-output inspection cells.
+# tensorflow-data-validation 1.16.1 requires pandas<2, so this is left as a
+# range rather than a pin -- an exact pin here fights that transitive bound
+# and pip fails with ResolutionImpossible.
+pandas<2
