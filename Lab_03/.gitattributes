@@ -1,0 +1,15 @@
+# The data files must stay LF. CsvExampleGen infers each column's type from
+# the file it reads, and a CRLF checkout leaves a trailing \r glued to the last
+# value of every row -- which is one of the two defects prepare_data.py exists
+# to remove. Without this, a Windows checkout silently reintroduces it.
+*.csv                   text eol=lf
+
+# Read inside Linux containers.
+Dockerfile              text eol=lf
+docker-compose.yml      text eol=lf
+requirements.txt        text eol=lf
+requirements.lock.txt   text eol=lf
+
+# Executed by the container's Python, and diffed as text.
+*.py                    text eol=lf
+*.ipynb                 text eol=lf
