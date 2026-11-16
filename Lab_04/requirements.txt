@@ -1,0 +1,16 @@
+# Versions the lab was run and tested with (Python 3.13, Windows, RTX 4060).
+#
+# torch: the default PyPI wheel on Windows is CPU-only. For a CUDA GPU install the
+# CUDA build instead (this is what the notebooks were run with):
+#   pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cu128
+# The code uses the GPU if torch can see one and falls back to the CPU otherwise.
+torch==2.10.0
+transformers==5.3.0
+numpy==2.1.3
+pandas==2.2.3
+scikit-learn==1.6.1
+matplotlib==3.10.0
+
+# tests and notebook files
+nbformat==5.10.4
+pytest==8.3.4

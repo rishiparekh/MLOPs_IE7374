@@ -1,0 +1,20 @@
+[
+ {
+  "setting": "fp32 (original)",
+  "accuracy": 0.44,
+  "general_ppl": 32.27439424904375,
+  "decoder_MB": 424.81152
+ },
+ {
+  "setting": "8-bit quantized",
+  "accuracy": 0.45,
+  "general_ppl": 32.3460910016074,
+  "decoder_MB": 116.62848
+ },
+ {
+  "setting": "4-bit quantized",
+  "accuracy": 0.23,
+  "general_ppl": 38.90980038789667,
+  "decoder_MB": 63.54432
+ }
+]
